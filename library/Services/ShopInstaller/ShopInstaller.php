@@ -92,9 +92,17 @@ class ShopInstaller implements ShopServiceInterface
         }
         $this->insertConfigValue('int', 'sOnlineLicenseNextCheckTime', time() + 25920000);
 
-        if ($request->getParameter('addDemoData', false)) {
+        if (!$request->getParameter('addDemoData')) {
+            $this->insertInitialData();
+        }
+
+        $this->runShopMigrations();
+
+        if ($request->getParameter('addDemoData')) {
             $this->insertDemoData();
         }
+
+        $this->runViewsRegeneration();
 
         if ($request->getParameter('international', false)) {
             $this->convertToInternational();
@@ -128,21 +136,49 @@ class ShopInstaller implements ShopServiceInterface
         $dbHandler->query('drop database `' . $dbHandler->getDbName() . '`');
         $dbHandler->query('create database `' . $dbHandler->getDbName() . '` collate ' . $dbHandler->getCharsetMode() . '_general_ci');
 
-        if (!file_exists($this->getEditionPathProvider()->getDatabaseSqlDirectory() . "/database.sql")) {
-            $baseEditionPathProvider = new EditionPathProvider(new EditionRootPathProvider(new EditionSelector(EditionSelector::COMMUNITY)));
+        $baseEditionPathProvider = new EditionPathProvider(new EditionRootPathProvider(new EditionSelector(EditionSelector::COMMUNITY)));
 
-            $dbHandler->import($baseEditionPathProvider->getDatabaseSqlDirectory() . "/database_schema.sql", 'latin1');
-            $dbHandler->import($baseEditionPathProvider->getDatabaseSqlDirectory() . "/initial_data.sql", 'latin1');
+        $dbHandler->import($baseEditionPathProvider->getDatabaseSqlDirectory() . "/database_schema.sql", 'latin1');
+    }
 
-            $testConfig = new TestConfig();
-            $vendorDir = $testConfig->getVendorDirectory();
+    /**
+     * Run migrations
+     */
+    protected function runShopMigrations()
+    {
+        $vendorDirectory = $this->getVendorDirectory();
+        exec("{$vendorDirectory}/bin/oe-eshop-facts oe-eshop-db_migrate");
+    }
 
-            exec("{$vendorDir}/bin/oe-eshop-facts oe-eshop-db_migrate");
-            exec("{$vendorDir}/bin/oe-eshop-facts oe-eshop-db_views_regenerate");
-        } else {
-            // Fallback. This is done because of backwards compatibility. This can be removed in near future.
-            $dbHandler->import($this->getEditionPathProvider()->getDatabaseSqlDirectory() . "/database.sql", 'latin1');
-        }
+    /**
+     * Run views regeneration
+     */
+    protected function runViewsRegeneration()
+    {
+        $vendorDirectory = $this->getVendorDirectory();
+        exec("{$vendorDirectory}/bin/oe-eshop-facts oe-eshop-db_views_regenerate");
+    }
+
+    /**
+     * Get vendor directory
+     *
+     * @return string
+     */
+    protected function getVendorDirectory()
+    {
+        $testConfig = new TestConfig();
+        $vendorDirectory = $testConfig->getVendorDirectory();
+
+        return $vendorDirectory;
+    }
+
+    /**
+     * Inserts initial data to shop.
+     */
+    public function insertInitialData()
+    {
+        $baseEditionPathProvider = new EditionPathProvider(new EditionRootPathProvider(new EditionSelector(EditionSelector::COMMUNITY)));
+        $this->getDbHandler()->import($baseEditionPathProvider->getDatabaseSqlDirectory() . "/initial_data.sql", 'latin1');
     }
 
     /**
